@@ -41,6 +41,10 @@ AUDIO_TYPES = {
     "webm": "audio/webm",
 }
 SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+WINDOWS_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10)), *(f"lpt{i}" for i in range(1, 10))}
+# Only the app's own address may talk to the server: blocks DNS rebinding (Host) and cross-site writes (Origin).
+ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
+ALLOWED_ORIGINS = {f"http://{host}" for host in ALLOWED_HOSTS}
 TR_MAP = str.maketrans({"ç": "c", "Ç": "c", "ğ": "g", "Ğ": "g", "ı": "i", "İ": "i", "ö": "o", "Ö": "o", "ş": "s", "Ş": "s", "ü": "u", "Ü": "u"})
 
 
@@ -91,7 +95,11 @@ def get_model():
                 raise
             print(f"[model] CUDA load failed ({exc}); falling back to cpu/int8", flush=True)
             _device, _compute = "cpu", "int8"
-            _model = WhisperModel(MODEL_NAME, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
+            try:
+                _model = WhisperModel(MODEL_NAME, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4)
+            except Exception as cpu_exc:
+                _model_error = str(cpu_exc)
+                raise
         _model_error = None
         print(f"[model] ready in {time.perf_counter() - started:.1f}s", flush=True)
         return _model
@@ -208,12 +216,13 @@ def slugify(title: str) -> str:
     text = unicodedata.normalize("NFKD", (title or "").translate(TR_MAP))
     text = text.encode("ascii", "ignore").decode("ascii").lower()
     text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
-    return text[:80].strip("-") or "sahne"
+    text = text[:78].strip("-") or "sahne"
+    return f"{text}-1" if text in WINDOWS_RESERVED else text
 
 
 def entry_dir(slug: str) -> Path | None:
     """Return the library folder for a slug, or None if the slug is unsafe."""
-    if not slug or len(slug) > 80 or not SLUG_RE.fullmatch(slug):
+    if not slug or len(slug) > 80 or not SLUG_RE.fullmatch(slug) or slug in WINDOWS_RESERVED:
         return None
     base = LIBRARY.resolve()
     path = (base / slug).resolve()
@@ -245,7 +254,6 @@ class Handler(BaseHTTPRequestHandler):
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -254,16 +262,25 @@ class Handler(BaseHTTPRequestHandler):
         content_type = self.headers.get("Content-Type", "")
         return cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": content_type})
 
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Range")
-        self.end_headers()
+    def _forbidden(self, write: bool) -> bool:
+        """403 unless the request targets this server by its own name and, for writes, comes from its own page.
+
+        No CORS headers are sent anywhere: the UI is same-origin, so other sites can neither read responses
+        nor pass the Origin check on POST/DELETE, and a rebound hostname fails the Host check.
+        """
+        host = (self.headers.get("Host") or "").strip().lower()
+        origin = self.headers.get("Origin")
+        if host not in ALLOWED_HOSTS or (write and origin is not None and origin.strip().lower() not in ALLOWED_ORIGINS):
+            self.close_connection = True
+            self._json(403, {"error": "Yalnızca yerel PromptFlow sayfasından erişilebilir"})
+            return True
+        return False
 
     # GET -------------------------------------------------------------
 
     def do_GET(self):
+        if self._forbidden(write=False):
+            return
         parts = self._parts()
         if not parts or parts == ["index.html"]:
             self._index()
@@ -334,7 +351,6 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", mime)
         self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Access-Control-Allow-Origin", "*")
         if status == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{len(data)}")
         self.send_header("Content-Length", str(len(body)))
@@ -344,6 +360,8 @@ class Handler(BaseHTTPRequestHandler):
     # POST ------------------------------------------------------------
 
     def do_POST(self):
+        if self._forbidden(write=True):
+            return
         parts = self._parts()
         if parts == ["align"]:
             self._align()
@@ -414,6 +432,7 @@ class Handler(BaseHTTPRequestHandler):
             if path is None:
                 self._json(400, {"error": "Geçersiz kayıt adı"})
                 return
+            overwritten = (path / "scene.json").is_file()
             path.mkdir(parents=True, exist_ok=True)
             for old in path.glob("audio.*"):
                 old.unlink()
@@ -433,13 +452,15 @@ class Handler(BaseHTTPRequestHandler):
             tmp.write_text(json.dumps(scene, ensure_ascii=False, indent=2), encoding="utf-8")
             os.replace(tmp, path / "scene.json")
             print(f"[library] saved {slug}", flush=True)
-            self._json(200, {"slug": slug, "title": title, "savedAt": scene["savedAt"]})
+            self._json(200, {"slug": slug, "title": title, "savedAt": scene["savedAt"], "overwritten": overwritten})
         except Exception as exc:
             self._json(500, {"error": str(exc)})
 
     # DELETE ----------------------------------------------------------
 
     def do_DELETE(self):
+        if self._forbidden(write=True):
+            return
         parts = self._parts()
         if len(parts) != 2 or parts[0] != "library":
             self._json(404, {"error": "Bilinmeyen endpoint"})

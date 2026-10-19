@@ -35,6 +35,7 @@ body{overflow:hidden}
 .panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .panel-head .field-label{margin:0}
 .panel-meta{font-size:11px;color:var(--muted)}
+.panel-meta.notice{flex:1;color:#ffd166;text-align:right}
 .audio-picker{width:100%;justify-content:center;border-style:dashed!important;color:var(--ink)!important;cursor:pointer}
 .audio-picker input{display:none}
 .audio-picker.dragging{border-color:var(--accent)!important;background:#1a2110!important}
@@ -86,7 +87,7 @@ body{overflow:hidden}
     <button class="btn wide" id="saveAll" hidden>Tümünü kaydet</button>
   </div>
   <div class="panel-section">
-    <div class="panel-head"><div class="field-label">Kütüphane</div><button class="del" id="refreshLibrary" title="Listeyi yenile" aria-label="Listeyi yenile">⟳</button></div>
+    <div class="panel-head"><div class="field-label">Kütüphane</div><span class="panel-meta notice" id="libraryNotice" role="status"></span><button class="del" id="refreshLibrary" title="Listeyi yenile" aria-label="Listeyi yenile">⟳</button></div>
     <ul class="list" id="libraryList"><li class="empty">Yükleniyor…</li></ul>
   </div>
   <div><div class="field-label">Video adı</div><input id="title" class="title-input" value="Linux'u keşfederken" aria-label="Video adı"></div>
@@ -111,7 +112,8 @@ Videonun sonunda, yeni başlayanlar için gerçekten işe yarayan kurulum adıml
 const $=s=>document.querySelector(s);
 const editor=$('#editor'),script=$('#script'),title=$('#title'),heading=$('#heading'),stage=$('#stage'),audio=$('#referenceAudio'),audioFile=$('#audioFile'),audioDrop=$('#audioDrop'),alignStatus=$('#alignStatus');
 const sceneLabel=$('#sceneLabel'),serverStatus=$('#serverStatus'),sceneList=$('#sceneList'),libraryList=$('#libraryList'),queueInfo=$('#queueInfo'),pipBtn=$('#pip'),saveAllBtn=$('#saveAll');
-const API='http://127.0.0.1:8765';
+// Same origin as the page (the server only accepts its own origin); file:// falls back to the default address.
+const API=location.protocol.startsWith('http')?location.origin:'http://127.0.0.1:8765';
 const calibratedWpm=118;
 let running=false,audioClock=false,activeIndex=0,wordIndex=0,last=0,elapsed=0,raf=0,mirrored=false,unitDurations=[],unitStarts=[],wordTimings=[];
 let scenes=[],activeScene=0,queueBusy=false,pipWin=null,pipWordIndex=-1;
@@ -179,7 +181,8 @@ function loadScene(i){
   const s=scenes[i];if(!s)return;
   if(running)toggle();
   activeScene=i;
-  title.value=s.name;editor.value=s.text;
+  if(title.value!==s.name)title.value=s.name;
+  if(editor.value!==s.text)editor.value=s.text;
   if(s.objectURL){if(audio.getAttribute('src')!==s.objectURL){audio.src=s.objectURL;audio.load()}}
   else if(audio.getAttribute('src')){audio.removeAttribute('src');audio.load()}
   audioClock=false;
@@ -217,7 +220,9 @@ async function runQueue(){
       const sent=s.text;
       try{
         const data=await alignAudio(s.file,sent);
-        Object.assign(s,{text:data.replaced?data.transcript:sent,alignment:data.words,replaced:!!data.replaced,status:'ready',error:'',textChanged:false});
+        // Text typed while this scene was processing wins over the snapshot/transcript; timings then no longer match it.
+        const edited=s.text!==sent;
+        Object.assign(s,{text:edited?s.text:(data.replaced?data.transcript:sent),alignment:data.words,replaced:!!data.replaced,status:'ready',error:'',textChanged:edited});
       }catch(error){s.status='error';s.error=error.message;console.error(error)}
       if(s===currentScene())loadScene(scenes.indexOf(s));else renderScenes();
       if(s.status==='ready')await saveScene(s).catch(error=>console.error('Otomatik kayıt başarısız',error));
@@ -226,6 +231,8 @@ async function runQueue(){
 }
 
 // ---- Local library (library/<slug>/ on disk) ----
+let noticeTimer=0;
+function libraryNotice(text){const el=$('#libraryNotice');el.textContent=text;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>el.textContent='',5000)}
 function sceneDuration(s){const a=s.alignment||[];if(s===currentScene()&&Number.isFinite(audio.duration))return audio.duration;return a.length?a[a.length-1].end||0:0}
 async function saveScene(s){
   if(!s?.file)throw new Error('Bu sahnede ses yok');
@@ -238,6 +245,7 @@ async function saveScene(s){
   const response=await fetch(API+'/library',{method:'POST',body:form});
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(data.error||'Kaydedilemedi');
+  if(data.overwritten&&s.slug!==data.slug)libraryNotice(`“${data.title}” zaten vardı, üzerine yazıldı`);
   s.slug=data.slug;s.saved=true;renderScenes();loadLibrary();
   return data;
 }
