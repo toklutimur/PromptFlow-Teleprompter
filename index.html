@@ -20,12 +20,76 @@
 .teleprompter:fullscreen .reading{padding:0 7%;}
 .teleprompter:fullscreen .script{font-size:clamp(34px,3.1vw,86px);}
 @media(max-width:900px){.script{left:6%;right:6%;}.script .unit.active{transform:scale(1.04);}}
+
+/* Prompter-first layout: stage fills the left column, everything else lives in the right panel */
+body{overflow:hidden}
+.app{grid-template-columns:minmax(0,1fr) 420px;height:100vh;min-height:0}
+.teleprompter{height:100vh;min-height:0;border-radius:0}
+.side-panel{height:100vh;overflow:auto;background:rgba(11,13,16,.88);border-left:1px solid var(--line);padding:18px 18px 22px;display:flex;flex-direction:column;gap:18px;min-width:0}
+.side-panel .brand{padding:0}
+.side-panel .topbar{align-items:flex-start;flex-direction:column;gap:10px}
+.side-panel .topbar h1{font-size:24px}
+.side-panel .toolbar label{flex:1 1 auto}
+.side-panel .toolbar audio{width:100%;height:38px}
+.panel-section{display:flex;flex-direction:column;gap:8px}
+.panel-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.panel-head .field-label{margin:0}
+.panel-meta{font-size:11px;color:var(--muted)}
+.panel-meta.notice{flex:1;color:#ffd166;text-align:right}
+.audio-picker{width:100%;justify-content:center;border-style:dashed!important;color:var(--ink)!important;cursor:pointer}
+.audio-picker input{display:none}
+.audio-picker.dragging{border-color:var(--accent)!important;background:#1a2110!important}
+.audio-picker.busy{border-color:var(--accent2)!important}
+.align-status{width:100%;font-size:12px;color:#b7c3ce}
+.btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+.btn.wide{width:100%}
+.list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto}
+.list .row{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:12px;cursor:pointer}
+.list .row:hover{border-color:#667482}
+.list .row.active{border-color:var(--accent)}
+.list .num{color:var(--muted);font-variant-numeric:tabular-nums}
+.list .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.list .meta{color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.list .saved{color:var(--accent2);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.list .empty{font-size:12px;color:var(--muted);padding:4px 2px}
+.chip{font-size:10px;font-weight:800;letter-spacing:.06em;padding:3px 7px;border-radius:6px;background:#222a32;color:var(--muted);white-space:nowrap}
+.chip.processing{background:#1d2840;color:var(--accent2)}
+.chip.ready{background:#26321e;color:var(--accent)}
+.chip.error{background:#3a1f22;color:var(--danger)}
+.del{background:transparent;color:var(--muted);font-size:16px;line-height:1;padding:0 4px;border-radius:6px}
+.del:hover{color:var(--danger)}
+.hintbar{flex-wrap:wrap;gap:6px}
+@media(max-width:900px){body{overflow:auto}.app{grid-template-columns:1fr;height:auto}.teleprompter{height:100vh;min-height:520px}.side-panel{height:auto;overflow:visible;border-left:0;border-top:1px solid var(--line)}}
 </style>
 </head>
 <body>
 <div class="app">
-<aside class="sidebar">
+<section class="teleprompter" id="stage">
+  <div class="tele-head"><div class="scene"><span id="sceneLabel">Scene 01</span><b class="badge" id="currentMarker">READY</b></div><div class="timer" id="timer">00:00</div></div>
+  <div class="reading"><div class="focus-line"></div><div class="script" id="script"></div></div>
+  <div class="controls"><button class="round" id="back" title="Başa dön">↺</button><button class="round" id="slower" title="Yavaşlat">−</button><button class="round mainplay" id="play" title="Başlat / duraklat">▶</button><button class="round" id="faster" title="Hızlandır">+</button><button class="round" id="reset" title="Sıfırla">⟲</button></div>
+</section>
+<aside class="side-panel">
   <div class="brand"><div class="brand-mark">P</div><div><b>PromptFlow</b><small>Studio / local teleprompter</small></div></div>
+  <div class="topbar"><div><div class="eyebrow">Recording cockpit</div><h1 id="heading">Linux'u keşfederken</h1></div><div class="status"><span class="dot"></span><span id="serverStatus">Sunucu kontrol ediliyor…</span></div></div>
+  <div class="toolbar">
+    <label>Hız <input id="speed" type="range" min="1" max="8" step="1" value="3"><strong id="speedValue">118</strong> wpm</label>
+    <label>Yazı <input id="fontSize" type="range" min="22" max="86" step="1" value="34"><strong id="fontValue">34</strong>px</label>
+    <label>Görünüm <select id="theme"><option value="dark">Dark focus</option><option value="warm">Warm studio</option></select></label>
+    <audio id="referenceAudio" controls preload="auto" title="Ses dosyası"></audio>
+    <label id="audioDrop" class="audio-picker">MP3 bırak / seç (birden fazla olabilir) <input id="audioFile" type="file" multiple accept="audio/mpeg,audio/mp3,audio/*"></label>
+    <span id="alignStatus" class="align-status">Ses bekleniyor</span>
+    <button class="btn" id="mirror">↔ Aynala</button><button class="btn primary" id="fullscreen">⛶ Tam ekran</button><button class="btn" id="pip">Cümleyi ayır ⧉</button>
+  </div>
+  <div class="panel-section">
+    <div class="panel-head"><div class="field-label">Sahneler</div><span class="panel-meta" id="queueInfo"></span></div>
+    <ul class="list" id="sceneList"></ul>
+    <button class="btn wide" id="saveAll" hidden>Tümünü kaydet</button>
+  </div>
+  <div class="panel-section">
+    <div class="panel-head"><div class="field-label">Kütüphane</div><span class="panel-meta notice" id="libraryNotice" role="status"></span><button class="del" id="refreshLibrary" title="Listeyi yenile" aria-label="Listeyi yenile">⟳</button></div>
+    <ul class="list" id="libraryList"><li class="empty">Yükleniyor…</li></ul>
+  </div>
   <div><div class="field-label">Video adı</div><input id="title" class="title-input" value="Linux'u keşfederken" aria-label="Video adı"></div>
   <div><div class="field-label">Konuşma metni</div><textarea id="editor" class="editor" spellcheck="false">[HOOK] Bugün Linux'u ilk kez kurcalayan biri olarak, size en çok şaşırdığım üç şeyi anlatacağım.
 
@@ -39,45 +103,293 @@
 
 Videonun sonunda, yeni başlayanlar için gerçekten işe yarayan kurulum adımlarını da paylaşacağım. Hazırsanız başlayalım.</textarea></div>
   <div class="help">İşaretçiler: <b>[HOOK]</b> vurgu · <b>[PAUSE]</b> nefes · <b>[CAMERA]</b> kameraya bak · <b>[ASIDE]</b> yan not</div>
-  <div class="side-actions"><button class="btn" id="loadDemo">Örnek metin</button><button class="btn" id="clearText">Temizle</button><button class="btn primary" id="saveScript">Yerel kaydet</button><button class="btn" id="exportText">TXT dışa aktar</button></div>
-  <div class="project-note">Bu sürüm tamamen bilgisayarında çalışır. Metin tarayıcının yerel hafızasına kaydedilir; buluta gönderilmez.</div>
-</aside>
-<main class="main">
-  <div class="topbar"><div><div class="eyebrow">Recording cockpit</div><h1 id="heading">Linux'u keşfederken</h1></div><div class="status"><span class="dot"></span>Hazır · kamera için uygun</div></div>
-  <div class="toolbar">
-    <label>Hız <input id="speed" type="range" min="1" max="8" step="1" value="3"><strong id="speedValue">118</strong> wpm</label>
-    <label>Yazı <input id="fontSize" type="range" min="22" max="86" step="1" value="34"><strong id="fontValue">34</strong>px</label>
-    <label>Görünüm <select id="theme"><option value="dark">Dark focus</option><option value="warm">Warm studio</option></select></label>
-    <audio id="referenceAudio" controls preload="auto" title="Ses dosyası"></audio><label id="audioDrop" class="audio-picker">MP3 bırak / seç <input id="audioFile" type="file" accept="audio/mpeg,audio/mp3,audio/*"></label><span id="alignStatus" class="align-status">Ses bekleniyor</span>
-    <button class="btn" id="mirror">↔ Aynala</button><button class="btn primary" id="fullscreen">⛶ Tam ekran</button>
-  </div>
-  <section class="teleprompter" id="stage">
-    <div class="tele-head"><div class="scene"><span>Scene 01</span><b class="badge" id="currentMarker">READY</b></div><div class="timer" id="timer">00:00</div></div>
-    <div class="reading"><div class="focus-line"></div><div class="script" id="script"></div></div>
-    <div class="controls"><button class="round" id="back" title="Başa dön">↺</button><button class="round" id="slower" title="Yavaşlat">−</button><button class="round mainplay" id="play" title="Başlat / duraklat">▶</button><button class="round" id="faster" title="Hızlandır">+</button><button class="round" id="reset" title="Sıfırla">⟲</button></div>
-  </section>
+  <div class="side-actions"><button class="btn" id="loadDemo">Örnek metin</button><button class="btn" id="clearText">Temizle</button><button class="btn primary" id="saveScript">Yerel kaydet</button></div>
   <div class="hintbar"><span>Metni düzenle, sonra <span class="key">Space</span> ile başlat / duraklat</span><span><span class="key">F</span> tam ekran · <span class="key">R</span> aynala</span></div>
-</main>
+  <div class="project-note">Bu sürüm tamamen bilgisayarında çalışır. Sahneler proje klasöründeki <b>library/</b> dizinine kaydedilir; ses ve metin buluta gönderilmez.</div>
+</aside>
 </div>
 <script>
-const $=s=>document.querySelector(s);const editor=$('#editor'),script=$('#script'),title=$('#title'),heading=$('#heading'),stage=$('#stage'),audio=$('#referenceAudio'),audioFile=$('#audioFile'),audioDrop=$('#audioDrop'),alignStatus=$('#alignStatus');const calibratedWpm=118;let running=false,audioClock=false,activeIndex=0,wordIndex=0,last=0,elapsed=0,raf=0,mirrored=false,unitDurations=[],unitStarts=[],wordTimings=[];
+const $=s=>document.querySelector(s);
+const editor=$('#editor'),script=$('#script'),title=$('#title'),heading=$('#heading'),stage=$('#stage'),audio=$('#referenceAudio'),audioFile=$('#audioFile'),audioDrop=$('#audioDrop'),alignStatus=$('#alignStatus');
+const sceneLabel=$('#sceneLabel'),serverStatus=$('#serverStatus'),sceneList=$('#sceneList'),libraryList=$('#libraryList'),queueInfo=$('#queueInfo'),pipBtn=$('#pip'),saveAllBtn=$('#saveAll');
+// Same origin as the page (the server only accepts its own origin); file:// falls back to the default address.
+const API=location.protocol.startsWith('http')?location.origin:'http://127.0.0.1:8765';
+const calibratedWpm=118;
+let running=false,audioClock=false,activeIndex=0,wordIndex=0,last=0,elapsed=0,raf=0,mirrored=false,unitDurations=[],unitStarts=[],wordTimings=[];
+let scenes=[],activeScene=0,queueBusy=false,pipWin=null,pipWordIndex=-1;
+const statusLabels={idle:'Ses yok',queued:'Sırada',processing:'İşleniyor',ready:'Hazır ✓',error:'Hata'};
 const markerNames={HOOK:'marker',PAUSE:'marker pause',CAMERA:'marker camera',ASIDE:'marker aside'};
+
 function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function escapeAttr(s){return escapeHtml(String(s)).replace(/"/g,'&quot;')}
 function lineHtml(line){const parts=line.split(/(\[HOOK\]|\[PAUSE\]|\[CAMERA\]|\[ASIDE\]|\s+)/);return parts.map(part=>{if(markerNames[part?.slice(1,-1)])return `<span class="${markerNames[part.slice(1,-1)]}">${part.slice(1,-1)}</span>`;if(/^\s+$/.test(part))return part;return part?`<span class="word">${escapeHtml(part)}</span>`:''}).join('')}
 function splitUnits(raw){return raw.split(/\n+/).map(s=>s.trim()).filter(Boolean).flatMap(block=>{const sentences=block.match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[block];return sentences.flatMap(sentence=>{const words=sentence.trim().split(/\s+/);const chunks=[];for(let i=0;i<words.length;i+=14)chunks.push(words.slice(i,i+14).join(' '));return chunks;});})}
-function render(){const raw=editor.value.replaceAll(String.fromCharCode(13),'');const blocks=splitUnits(raw);script.innerHTML=blocks.map((b,i)=>`<div class="unit" data-index="${i}">${lineHtml(b)}</div>`).join('');heading.textContent=title.value||'Adsız video';localStorage.setItem('promptflow-text',editor.value);localStorage.setItem('promptflow-title',title.value);wordTimings=[];activeIndex=0;wordIndex=0;buildTiming();setActive(0);}
+function fmtTime(sec){const s=Math.max(0,Math.round(Number(sec)||0));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
+
+// ---- Prompter core (render / timing / playback) ----
+function render(){
+  const raw=editor.value.replaceAll(String.fromCharCode(13),'');
+  const blocks=splitUnits(raw);
+  script.innerHTML=blocks.map((b,i)=>`<div class="unit" data-index="${i}">${lineHtml(b)}</div>`).join('');
+  heading.textContent=title.value||'Adsız video';
+  localStorage.setItem('promptflow-text',editor.value);
+  localStorage.setItem('promptflow-title',title.value);
+  wordTimings=[];activeIndex=0;wordIndex=0;buildTiming();setActive(0);
+}
 function recenter(){const unit=script.querySelector('.unit.active');if(!unit)return;script.style.transform=`translateY(-${unit.offsetTop+unit.offsetHeight/2}px)${mirrored?' scaleX(-1)':''}`;}
 function buildTiming(){const units=[...script.querySelectorAll('.unit')];const wpm=calibratedWpm*(Number($('#speed').value)/3);unitDurations=units.map(u=>Math.max(700,u.querySelectorAll('.word').length/wpm*60000));unitStarts=[];let start=0;unitDurations.forEach(d=>{unitStarts.push(start);start+=d})}
 function applyWordTimings(timings){wordTimings=timings;const units=[...script.querySelectorAll('.unit')];unitStarts=[];unitDurations=[];let offset=0;units.forEach((unit,i)=>{const count=unit.querySelectorAll('.word').length;const first=wordTimings[offset]?.start??0;const last=wordTimings[offset+count-1]?.end??first+700;const next=wordTimings[offset+count]?.start;unitStarts.push(first*1000);unitDurations.push(Math.max(700,((next??last)-first)*1000));offset+=count});alignStatus.textContent='Senkron hazır ✓';}
-async function alignAudio(file){audioDrop.classList.add('busy');alignStatus.textContent='Ses analiz ediliyor…';const form=new FormData();form.append('audio',file);form.append('script',editor.value);try{const response=await fetch('http://127.0.0.1:8765/align',{method:'POST',body:form});const data=await response.json();if(!response.ok)throw new Error(data.error||'Senkronizasyon başarısız');if(data.replaced){editor.value=data.transcript;render();}applyWordTimings(data.words);reset();alignStatus.textContent=data.replaced?'Metin sesten oluşturuldu ✓':'Senkron hazır ✓';}catch(error){wordTimings=[];buildTiming();alignStatus.textContent='Hata: '+error.message;console.error(error)}finally{audioDrop.classList.remove('busy')}}
-function setActive(index){const units=[...script.querySelectorAll('.unit')];if(!units.length)return;activeIndex=Math.max(0,Math.min(index,units.length-1));wordIndex=0;units.forEach((u,i)=>u.classList.toggle('active',i===activeIndex));const unit=units[activeIndex];const marker=unit.querySelector('.marker');$('#currentMarker').textContent=marker?.textContent||'READ';units.forEach(u=>u.querySelectorAll('.word').forEach(w=>w.classList.remove('active')));unit.querySelector('.word')?.classList.add('active');recenter()}
-function updateWord(){const unit=script.querySelector('.unit.active');if(!unit)return;const words=[...unit.querySelectorAll('.word')];if(!words.length)return;const globalOffset=[...script.querySelectorAll('.unit')].slice(0,activeIndex).reduce((n,u)=>n+u.querySelectorAll('.word').length,0);if(wordTimings.length){const local=wordTimings.slice(globalOffset,globalOffset+words.length);wordIndex=Math.max(0,local.findLastIndex(item=>elapsed>=item.start*1000));}else{const duration=unitDurations[activeIndex]||1;wordIndex=Math.min(words.length-1,Math.max(0,Math.floor(((elapsed-(unitStarts[activeIndex]||0))/duration)*words.length)));}words.forEach((w,i)=>w.classList.toggle('active',i===wordIndex));}
+async function alignAudio(file,text){
+  const form=new FormData();
+  form.append('audio',file,file.name||'audio.mp3');
+  form.append('script',text);
+  const response=await fetch(API+'/align',{method:'POST',body:form});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||'Senkronizasyon başarısız');
+  return data;
+}
+function setActive(index){const units=[...script.querySelectorAll('.unit')];if(!units.length){syncPip(true);return}activeIndex=Math.max(0,Math.min(index,units.length-1));wordIndex=0;units.forEach((u,i)=>u.classList.toggle('active',i===activeIndex));const unit=units[activeIndex];const marker=unit.querySelector('.marker');$('#currentMarker').textContent=marker?.textContent||'READ';units.forEach(u=>u.querySelectorAll('.word').forEach(w=>w.classList.remove('active')));unit.querySelector('.word')?.classList.add('active');recenter();syncPip(true)}
+function updateWord(){const unit=script.querySelector('.unit.active');if(!unit)return;const words=[...unit.querySelectorAll('.word')];if(!words.length)return;const globalOffset=[...script.querySelectorAll('.unit')].slice(0,activeIndex).reduce((n,u)=>n+u.querySelectorAll('.word').length,0);if(wordTimings.length){const local=wordTimings.slice(globalOffset,globalOffset+words.length);wordIndex=Math.max(0,local.findLastIndex(item=>elapsed>=item.start*1000));}else{const duration=unitDurations[activeIndex]||1;wordIndex=Math.min(words.length-1,Math.max(0,Math.floor(((elapsed-(unitStarts[activeIndex]||0))/duration)*words.length)));}words.forEach((w,i)=>w.classList.toggle('active',i===wordIndex));syncPip(false)}
 function tick(t){if(!running)return;const dt=Math.min(80,t-last||16);last=t;elapsed=audioClock?audio.currentTime*1000:elapsed+dt;const units=script.querySelectorAll('.unit');while(activeIndex<units.length-1&&elapsed>=unitStarts[activeIndex+1])setActive(activeIndex+1);updateWord();const totalSeconds=Math.floor(elapsed/1000);$('#timer').textContent=String(Math.floor(totalSeconds/60)).padStart(2,'0')+':'+String(totalSeconds%60).padStart(2,'0');raf=requestAnimationFrame(tick)}
 function toggle(){if(running){running=false;audio.pause();$('#play').textContent='▶';cancelAnimationFrame(raf);return}running=true;$('#play').textContent='Ⅱ';audioClock=false;if(audio.readyState)audio.play().then(()=>audioClock=true).catch(()=>{});last=performance.now();raf=requestAnimationFrame(tick)}
 function reset(){running=false;cancelAnimationFrame(raf);audio.pause();audio.currentTime=0;audioClock=false;elapsed=0;$('#play').textContent='▶';$('#timer').textContent='00:00';setActive(0)}
-function setSpeed(v){$('#speed').value=Math.max(1,Math.min(8,v));$('#speedValue').textContent=Math.round(calibratedWpm*(Number($('#speed').value)/3));buildTiming()}
-function download(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([editor.value],{type:'text/plain'}));a.download=(title.value||'konusma-metni')+'.txt';a.click();URL.revokeObjectURL(a.href)}
-editor.addEventListener('input',render);title.addEventListener('input',render);audioFile.onchange=e=>{const file=e.target.files[0];if(file){audio.src=URL.createObjectURL(file);audio.load();audioClock=false;alignAudio(file)}};audioDrop.ondragover=e=>{e.preventDefault();audioDrop.classList.add('dragging')};audioDrop.ondragleave=()=>audioDrop.classList.remove('dragging');audioDrop.ondrop=e=>{e.preventDefault();audioDrop.classList.remove('dragging');const file=[...e.dataTransfer.files].find(f=>f.type.startsWith('audio/')||/\.(mp3|wav|m4a|ogg)$/i.test(f.name));if(file){audioFile.files=e.dataTransfer.files;audio.src=URL.createObjectURL(file);audio.load();audioClock=false;alignAudio(file)}};$('#play').onclick=toggle;$('#reset').onclick=reset;$('#back').onclick=reset;$('#slower').onclick=()=>setSpeed(Number($('#speed').value)-1);$('#faster').onclick=()=>setSpeed(Number($('#speed').value)+1);$('#speed').oninput=e=>setSpeed(e.target.value);$('#fontSize').oninput=e=>{script.style.fontSize=e.target.value+'px';$('#fontValue').textContent=e.target.value;recenter()};$('#loadDemo').onclick=()=>{editor.value='[HOOK] Bu videoda kameraya bakarak daha rahat konuşmanızı sağlayacak üç küçük tekniği göstereceğim.\n\nBirinci teknik: cümleleri kısa tutun. Böylece hem siz hem de izleyen kişi fikri daha kolay takip eder.\n\n[PAUSE] Burada nefes al.\n\nİkinci teknik: metni kelime kelime okumak yerine, bir sonraki fikri takip edin.\n\n[CAMERA] Gülümse ve kameraya dön.\n\nŞimdi üçüncü tekniğe geçelim.';render();reset()};$('#clearText').onclick=()=>{editor.value='';render();reset()};$('#saveScript').onclick=()=>{render();$('#saveScript').textContent='Kaydedildi ✓';setTimeout(()=>$('#saveScript').textContent='Yerel kaydet',1200)};$('#exportText').onclick=download;$('#mirror').onclick=()=>{mirrored=!mirrored;recenter();$('#mirror').textContent=mirrored?'↔ Aynalama açık':'↔ Aynala'};$('#fullscreen').onclick=()=>stage.requestFullscreen?.();$('#theme').onchange=e=>{document.body.style.filter=e.target.value==='warm'?'sepia(.12) saturate(1.08)':'none'};document.addEventListener('keydown',e=>{if(e.target.matches('input,textarea,select'))return;if(e.code==='Space'){e.preventDefault();toggle()}if(e.key.toLowerCase()==='f')stage.requestFullscreen?.();if(e.key.toLowerCase()==='r')$('#mirror').click();if(e.key==='Escape'&&running)toggle()});const saved=localStorage.getItem('promptflow-text'),savedTitle=localStorage.getItem('promptflow-title');if(saved!==null)editor.value=saved;if(savedTitle)title.value=savedTitle;render();
+function setSpeed(v){$('#speed').value=Math.max(1,Math.min(8,v));$('#speedValue').textContent=Math.round(calibratedWpm*(Number($('#speed').value)/3));if(wordTimings.length){applyWordTimings(wordTimings);updateAlignStatus()}else buildTiming()}
+
+// ---- Scenes: one per audio file, processed by a sequential queue ----
+function makeScene(name,file,text){return{name,file,fileName:file?.name||'',objectURL:file?URL.createObjectURL(file):'',text,alignment:null,status:file?'queued':'idle',error:'',replaced:false,textChanged:false,fromLibrary:false,slug:'',saved:false}}
+function baseName(n){return n.replace(/\.[^.]+$/,'')||'Sahne'}
+function isAudio(f){return f.type.startsWith('audio/')||/\.(mp3|wav|m4a|ogg|oga|opus|flac|aac|webm)$/i.test(f.name)}
+function currentScene(){return scenes[activeScene]}
+function updateAlignStatus(){
+  const s=currentScene();if(!s)return;
+  const text={idle:'Ses bekleniyor',queued:'Sırada…',processing:'Ses analiz ediliyor…',error:'Hata: '+s.error}[s.status];
+  if(text){alignStatus.textContent=text;return}
+  if(s.textChanged)alignStatus.textContent='Metin değişti · senkron için MP3’ü tekrar bırakın';
+  else if(!s.alignment?.length)alignStatus.textContent='Senkron yok · WPM modu';
+  else if(s.fromLibrary)alignStatus.textContent='Kütüphaneden yüklendi · senkron hazır ✓';
+  else alignStatus.textContent=s.replaced?'Metin sesten oluşturuldu ✓':'Senkron hazır ✓';
+}
+function renderScenes(){
+  sceneList.innerHTML=scenes.map((s,i)=>`<li class="row${i===activeScene?' active':''}" data-i="${i}" title="${escapeAttr(s.fileName||s.name||'')}"><span class="num">${String(i+1).padStart(2,'0')}</span><span class="name">${escapeHtml(s.name||'Adsız')}</span>${s.saved?'<span class="saved">kayıtlı</span>':''}<span class="chip ${s.status}"${s.status==='error'?` title="${escapeAttr(s.error)}"`:''}>${statusLabels[s.status]}</span></li>`).join('');
+  const withAudio=scenes.filter(s=>s.file),ready=withAudio.filter(s=>s.status==='ready');
+  queueInfo.textContent=withAudio.length?`${ready.length}/${withAudio.length} hazır`:'';
+  saveAllBtn.hidden=withAudio.length<2;
+  saveAllBtn.disabled=!ready.length;
+  audioDrop.classList.toggle('busy',queueBusy);
+}
+function loadScene(i){
+  const s=scenes[i];if(!s)return;
+  if(running)toggle();
+  activeScene=i;
+  if(title.value!==s.name)title.value=s.name;
+  if(editor.value!==s.text)editor.value=s.text;
+  if(s.objectURL){if(audio.getAttribute('src')!==s.objectURL){audio.src=s.objectURL;audio.load()}}
+  else if(audio.getAttribute('src')){audio.removeAttribute('src');audio.load()}
+  audioClock=false;
+  render();
+  if(s.status==='ready'&&!s.textChanged&&s.alignment?.length)applyWordTimings(s.alignment);
+  reset();
+  sceneLabel.textContent='Scene '+String(i+1).padStart(2,'0');
+  updateAlignStatus();renderScenes();
+}
+function addFiles(list){
+  const files=[...list].filter(isAudio);if(!files.length)return;
+  const cur=currentScene();
+  // Same file dropped again on the active scene: re-sync it against the edited text.
+  if(files.length===1&&cur?.fileName===files[0].name&&cur.status!=='queued'&&cur.status!=='processing'){
+    URL.revokeObjectURL(cur.objectURL);
+    Object.assign(cur,{file:files[0],objectURL:URL.createObjectURL(files[0]),text:editor.value,alignment:null,status:'queued',error:'',textChanged:false,fromLibrary:false});
+    loadScene(activeScene);runQueue();return;
+  }
+  let first=-1;
+  files.forEach((file,k)=>{
+    if(k===0&&scenes.length===1&&!scenes[0].file){scenes[0]=makeScene(baseName(file.name),file,editor.value);first=0;return}
+    scenes.push(makeScene(baseName(file.name),file,''));
+    if(first<0)first=scenes.length-1;
+  });
+  if(!running)loadScene(first);else renderScenes();
+  runQueue();
+}
+async function runQueue(){
+  if(queueBusy)return;
+  queueBusy=true;renderScenes();
+  try{
+    let s;
+    while((s=scenes.find(x=>x.status==='queued'))){
+      s.status='processing';renderScenes();if(s===currentScene())updateAlignStatus();
+      const sent=s.text;
+      try{
+        const data=await alignAudio(s.file,sent);
+        // Text typed while this scene was processing wins over the snapshot/transcript; timings then no longer match it.
+        const edited=s.text!==sent;
+        Object.assign(s,{text:edited?s.text:(data.replaced?data.transcript:sent),alignment:data.words,replaced:!!data.replaced,status:'ready',error:'',textChanged:edited});
+      }catch(error){s.status='error';s.error=error.message;console.error(error)}
+      if(s===currentScene())loadScene(scenes.indexOf(s));else renderScenes();
+      if(s.status==='ready')await saveScene(s).catch(error=>console.error('Otomatik kayıt başarısız',error));
+    }
+  }finally{queueBusy=false;renderScenes()}
+}
+
+// ---- Local library (library/<slug>/ on disk) ----
+let noticeTimer=0;
+function libraryNotice(text){const el=$('#libraryNotice');el.textContent=text;clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>el.textContent='',5000)}
+function sceneDuration(s){const a=s.alignment||[];if(s===currentScene()&&Number.isFinite(audio.duration))return audio.duration;return a.length?a[a.length-1].end||0:0}
+async function saveScene(s){
+  if(!s?.file)throw new Error('Bu sahnede ses yok');
+  const form=new FormData();
+  form.append('audio',s.file,s.fileName||'audio.mp3');
+  form.append('title',s.name||'Sahne');
+  form.append('text',s.text);
+  form.append('alignment',JSON.stringify(s.textChanged?[]:(s.alignment||[])));
+  form.append('duration',String(sceneDuration(s)));
+  const response=await fetch(API+'/library',{method:'POST',body:form});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)throw new Error(data.error||'Kaydedilemedi');
+  if(data.overwritten&&s.slug!==data.slug)libraryNotice(`“${data.title}” zaten vardı, üzerine yazıldı`);
+  s.slug=data.slug;s.saved=true;renderScenes();loadLibrary();
+  return data;
+}
+async function loadLibrary(){
+  try{
+    const response=await fetch(API+'/library');
+    const items=await response.json();
+    if(!response.ok)throw new Error(items.error||'Liste alınamadı');
+    libraryList.innerHTML=items.length?items.map(it=>`<li class="row" data-slug="${escapeAttr(it.slug)}" title="${escapeAttr(it.savedAt?new Date(it.savedAt).toLocaleString('tr-TR'):'')}"><span class="name">${escapeHtml(it.title||it.slug)}</span><span class="meta">${fmtTime(it.duration)}</span><button class="del" data-del="${escapeAttr(it.slug)}" title="Sil" aria-label="Sil">×</button></li>`).join(''):'<li class="empty">Henüz kayıt yok</li>';
+  }catch(error){libraryList.innerHTML='<li class="empty">Sunucuya ulaşılamadı</li>'}
+}
+async function openLibraryEntry(slug){
+  const existing=scenes.findIndex(s=>s.slug===slug&&s.file);
+  if(existing>=0){loadScene(existing);return}
+  alignStatus.textContent='Kütüphaneden yükleniyor…';
+  try{
+    const base=API+'/library/'+encodeURIComponent(slug);
+    const [meta,blob]=await Promise.all([
+      fetch(base).then(r=>{if(!r.ok)throw new Error('Kayıt bulunamadı');return r.json()}),
+      fetch(base+'/audio').then(r=>{if(!r.ok)throw new Error('Ses bulunamadı');return r.blob()})
+    ]);
+    const file=new File([blob],meta.audioName||('audio.'+(meta.audioExt||'mp3')),{type:blob.type||'audio/mpeg'});
+    const s=makeScene(meta.title||slug,file,meta.text||'');
+    Object.assign(s,{alignment:Array.isArray(meta.alignment)?meta.alignment:[],status:'ready',slug,saved:true,fromLibrary:true});
+    if(scenes.length===1&&!scenes[0].file){scenes[0]=s;loadScene(0)}
+    else{scenes.push(s);loadScene(scenes.length-1)}
+  }catch(error){alignStatus.textContent='Hata: '+error.message;console.error(error)}
+}
+function flash(btn,text,back,ms=1400){btn.textContent=text;setTimeout(()=>btn.textContent=back,ms)}
+
+// ---- Floating always-on-top sentence (Document Picture-in-Picture) ----
+const pipCss=`:root{--accent:#d7ff4f}*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:#07090b;color:#fff;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.unit{width:100%;padding:0 4vw;text-align:center;font-weight:620;line-height:1.3;letter-spacing:-.025em;text-shadow:0 0 26px rgba(215,255,79,.10)}
+.word{transition:color .18s ease,text-shadow .18s ease}
+.word.active{color:var(--accent);text-shadow:0 0 18px rgba(215,255,79,.36)}
+.marker{display:inline-block;color:#0b0d10;background:var(--accent);border-radius:5px;padding:2px 7px;margin:0 8px 0 4px;font-size:.34em;line-height:1.8;letter-spacing:.08em;vertical-align:middle;text-shadow:none}
+.pause{background:#ffd166}.camera{background:#81a7ff}.aside{background:#ff8ba7}`;
+function pipUnitEl(){return pipWin?.document.getElementById('pipUnit')||null}
+function fitPip(){
+  const el=pipUnitEl();if(!el)return;
+  const W=pipWin.innerWidth,H=pipWin.innerHeight;
+  let size=Math.max(14,Math.min(W/9,H/1.6));
+  el.style.fontSize=size+'px';
+  for(let guard=0;guard<40&&size>14&&(el.scrollHeight>H*.92||el.scrollWidth>W);guard++){size*=.92;el.style.fontSize=size+'px'}
+}
+function syncPip(full){
+  const el=pipUnitEl();if(!el)return;
+  if(full){
+    const unit=script.querySelector('.unit.active');
+    el.innerHTML=unit?unit.innerHTML:'';
+    el.style.transform=mirrored?'scaleX(-1)':'';
+    pipWin.document.body.style.filter=document.body.style.filter;
+    pipWordIndex=-1;fitPip();
+  }
+  if(pipWordIndex!==wordIndex){el.querySelectorAll('.word').forEach((w,i)=>w.classList.toggle('active',i===wordIndex));pipWordIndex=wordIndex}
+}
+async function togglePip(){
+  if(pipWin){pipWin.close();return}
+  try{pipWin=await documentPictureInPicture.requestWindow({width:900,height:220})}
+  catch(error){alignStatus.textContent='Pencere açılamadı: '+error.message;return}
+  const doc=pipWin.document;
+  doc.title='PromptFlow · cümle';
+  const style=doc.createElement('style');style.textContent=pipCss;doc.head.append(style);
+  doc.body.innerHTML='<div class="unit" id="pipUnit"></div>';
+  pipWin.addEventListener('resize',fitPip);
+  pipWin.addEventListener('pagehide',()=>{pipWin=null;pipWordIndex=-1;pipBtn.textContent='Cümleyi ayır ⧉';pipBtn.classList.remove('primary')});
+  doc.addEventListener('keydown',onKey);
+  pipBtn.textContent='Pencereyi kapat ⧉';pipBtn.classList.add('primary');
+  syncPip(true);
+}
+if('documentPictureInPicture' in window)pipBtn.onclick=togglePip;
+else{pipBtn.disabled=true;pipBtn.title='Chrome/Edge gerekli'}
+
+// ---- Server health (model warm-up) ----
+async function pollHealth(){
+  let delay=1500;
+  try{
+    const response=await fetch(API+'/health');
+    const h=await response.json();
+    if(h.ready){serverStatus.textContent=`Hazır · ${h.device==='cuda'?'GPU':'CPU'} · ${h.model}`;delay=15000}
+    else serverStatus.textContent=h.error?'Model hatası: '+h.error:'Model hazırlanıyor…';
+  }catch(error){serverStatus.textContent='Sunucu kapalı · start-promptflow.bat';delay=4000}
+  setTimeout(pollHealth,delay);
+}
+
+// ---- Events ----
+function onEditorInput(){
+  const s=currentScene();
+  if(s){s.text=editor.value;if(s.alignment?.length&&s.status==='ready')s.textChanged=true}
+  render();updateAlignStatus();
+}
+function onKey(e){if(e.target.matches?.('input,textarea,select'))return;if(e.code==='Space'){e.preventDefault();toggle()}if(e.key.toLowerCase()==='f')stage.requestFullscreen?.();if(e.key.toLowerCase()==='r')$('#mirror').click();if(e.key==='Escape'&&running)toggle()}
+editor.addEventListener('input',onEditorInput);
+title.addEventListener('input',()=>{const s=currentScene();if(s)s.name=title.value;heading.textContent=title.value||'Adsız video';localStorage.setItem('promptflow-title',title.value);renderScenes()});
+audioFile.onchange=e=>{addFiles(e.target.files);audioFile.value=''};
+audioDrop.ondragover=e=>{e.preventDefault();audioDrop.classList.add('dragging')};
+audioDrop.ondragleave=()=>audioDrop.classList.remove('dragging');
+audioDrop.ondrop=e=>{e.preventDefault();audioDrop.classList.remove('dragging');addFiles(e.dataTransfer.files)};
+sceneList.onclick=e=>{const li=e.target.closest('li[data-i]');if(li&&Number(li.dataset.i)!==activeScene)loadScene(Number(li.dataset.i))};
+libraryList.onclick=async e=>{
+  const del=e.target.closest('[data-del]');
+  if(del){
+    const slug=del.dataset.del;
+    if(!confirm('Kütüphaneden silinsin mi?'))return;
+    try{const r=await fetch(API+'/library/'+encodeURIComponent(slug),{method:'DELETE'});if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||'Silinemedi')}
+    catch(error){alignStatus.textContent='Hata: '+error.message}
+    scenes.forEach(s=>{if(s.slug===slug){s.slug='';s.saved=false}});
+    renderScenes();loadLibrary();return;
+  }
+  const li=e.target.closest('li[data-slug]');
+  if(li)openLibraryEntry(li.dataset.slug);
+};
+$('#refreshLibrary').onclick=loadLibrary;
+$('#play').onclick=toggle;$('#reset').onclick=reset;$('#back').onclick=reset;
+$('#slower').onclick=()=>setSpeed(Number($('#speed').value)-1);$('#faster').onclick=()=>setSpeed(Number($('#speed').value)+1);$('#speed').oninput=e=>setSpeed(e.target.value);
+$('#fontSize').oninput=e=>{script.style.fontSize=e.target.value+'px';$('#fontValue').textContent=e.target.value;recenter()};
+$('#loadDemo').onclick=()=>{editor.value='[HOOK] Bu videoda kameraya bakarak daha rahat konuşmanızı sağlayacak üç küçük tekniği göstereceğim.\n\nBirinci teknik: cümleleri kısa tutun. Böylece hem siz hem de izleyen kişi fikri daha kolay takip eder.\n\n[PAUSE] Burada nefes al.\n\nİkinci teknik: metni kelime kelime okumak yerine, bir sonraki fikri takip edin.\n\n[CAMERA] Gülümse ve kameraya dön.\n\nŞimdi üçüncü tekniğe geçelim.';onEditorInput();reset()};
+$('#clearText').onclick=()=>{editor.value='';onEditorInput();reset()};
+$('#saveScript').onclick=async()=>{
+  const btn=$('#saveScript'),s=currentScene();
+  localStorage.setItem('promptflow-text',editor.value);localStorage.setItem('promptflow-title',title.value);
+  if(!s?.file){flash(btn,'Metin kaydedildi ✓','Yerel kaydet');return}
+  btn.disabled=true;btn.textContent='Kaydediliyor…';
+  try{await saveScene(s);flash(btn,'Kütüphaneye kaydedildi ✓','Yerel kaydet')}
+  catch(error){flash(btn,'Hata: '+error.message,'Yerel kaydet',2600)}
+  finally{btn.disabled=false}
+};
+saveAllBtn.onclick=async()=>{
+  const ready=scenes.filter(s=>s.file&&s.status==='ready');
+  saveAllBtn.disabled=true;let ok=0;
+  for(const s of ready){try{await saveScene(s);ok++}catch(error){console.error(error)}}
+  saveAllBtn.disabled=false;flash(saveAllBtn,`${ok}/${ready.length} sahne kaydedildi ✓`,'Tümünü kaydet');
+};
+$('#mirror').onclick=()=>{mirrored=!mirrored;recenter();syncPip(true);$('#mirror').textContent=mirrored?'↔ Aynalama açık':'↔ Aynala'};
+$('#fullscreen').onclick=()=>stage.requestFullscreen?.();
+$('#theme').onchange=e=>{document.body.style.filter=e.target.value==='warm'?'sepia(.12) saturate(1.08)':'none';syncPip(true)};
+document.addEventListener('keydown',onKey);
+
+// ---- Boot ----
+const saved=localStorage.getItem('promptflow-text'),savedTitle=localStorage.getItem('promptflow-title');
+if(saved!==null)editor.value=saved;if(savedTitle)title.value=savedTitle;
+scenes=[makeScene(title.value,null,editor.value)];
+loadScene(0);loadLibrary();pollHealth();
 </script>
 </body>
 </html>
