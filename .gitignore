@@ -12,6 +12,9 @@ venv/
 .huggingface/
 *.log
 
+# Local scene library (user audio + timings)
+library/
+
 # OS and editor files
 .DS_Store
 Thumbs.db
