@@ -46,6 +46,12 @@ Gereksinimler:
    uv pip install --python .venv312\Scripts\python.exe faster-whisper
    ```
 
+   NVIDIA ekran kartı varsa GPU kitaplıklarını da (yaklaşık 1,2 GB, CUDA 12 cuBLAS + cuDNN 9) aynı ortama kurun; sistem geneline CUDA Toolkit kurmak gerekmez, yalnızca güncel NVIDIA sürücüsü yeterlidir:
+
+   ```powershell
+   uv pip install --python .venv312\Scripts\python.exe -r requirements-gpu.txt
+   ```
+
 3. `start-promptflow.bat` dosyasını çalıştırın.
 4. Açılan tarayıcı penceresinde konuşma metnini temizleyin.
 5. Bir veya birden fazla ses dosyasını `MP3 bırak / seç` alanına sürükleyin. Başlıktaki durum `Model hazırlanıyor…` yazıyorsa model arka planda yükleniyordur.
@@ -87,6 +93,7 @@ PromptFlow-Teleprompter/
 ├── align_server.py             # Yerel Whisper analiz sunucusu
 ├── start-promptflow.bat        # Windows başlatıcısı
 ├── requirements.txt            # Python bağımlılığı
+├── requirements-gpu.txt        # İsteğe bağlı NVIDIA GPU kitaplıkları (CUDA 12)
 ├── library/                    # Kaydedilen sahneler (Git'e dahil değil)
 ├── LICENSE                     # MIT lisansı
 └── docs/screenshots/           # README görselleri
@@ -116,8 +123,10 @@ Ses dosyası
 
 - `large-v3-turbo` ilk çalıştırmada Hugging Face üzerinden indirilir ve yerel önbellekte tutulur.
 - Model sunucu açılırken bir kez yüklenir ve tüm isteklerde yeniden kullanılır; durum `GET /health` ile görülebilir.
-- CUDA destekli bir GPU bulunursa `float16` ile GPU kullanılır; cuBLAS/cuDNN kitaplıkları eksikse sunucu açılışta otomatik olarak CPU'ya (`int8`) geçer.
-- Ortam değişkenleri: `PROMPTFLOW_DEVICE=cpu` (CPU'ya zorla), `PROMPTFLOW_BEAM` (varsayılan `1`, daha yüksek değer daha yavaş ama biraz daha doğru), `PROMPTFLOW_MODEL` (varsayılan `large-v3-turbo`).
+- CUDA destekli bir GPU bulunursa GPU `int8_float16` ile kullanılır. `requirements-gpu.txt` paketlerinin DLL klasörleri (`site-packages\nvidia\*\bin`) sunucu açılırken arama yoluna otomatik eklenir. cuBLAS/cuDNN kitaplıkları eksikse sunucu açılışta otomatik olarak CPU'ya (`int8`) geçer; konsoldaki `[cuda] nvidia DLL dirs:` satırı bulunan klasörleri gösterir.
+- Ölçüm (GTX 1650 Ti 4 GB, 20 sn konuşma, sıcak model): GPU `int8_float16` ≈ 3,2 sn, GPU `float16` ≈ 12,7 sn, CPU `int8` ≈ 22 sn. Tensor çekirdeği olmayan kartlarda `float16` belirgin şekilde yavaştır.
+- Metin sesle senkron değilse (`Senkron yok · WPM modu`) `▶` metni sabit 118 kelime/dakika hızında kaydırır; ayrı bir hız ayarı yoktur. Ses yüklü sahnelerde hız her zaman sesin kendisinden gelir.
+- Ortam değişkenleri: `PROMPTFLOW_DEVICE=cpu` (CPU'ya zorla), `PROMPTFLOW_COMPUTE` (GPU hesaplama türü, varsayılan `int8_float16`; örn. `float16`), `PROMPTFLOW_BEAM` (varsayılan `1`, daha yüksek değer daha yavaş ama biraz daha doğru), `PROMPTFLOW_MODEL` (varsayılan `large-v3-turbo`).
 - Sunucu konsolu her dosyanın işlem süresini yazar.
 - Daha iyi sonuç için ses temiz, tek konuşmacılı ve metinle uyumlu olmalıdır.
 - Otomatik transkript, özellikle gürültülü veya çok hızlı kayıtlarda manuel kontrol gerektirebilir.
