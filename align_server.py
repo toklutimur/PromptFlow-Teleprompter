@@ -55,6 +55,43 @@ _ready = False
 _model_error: str | None = None
 _model_lock = threading.Lock()
 _transcribe_lock = threading.Lock()
+_dll_handles: list = []  # keep os.add_dll_directory handles alive for the process lifetime
+
+
+def register_nvidia_dlls() -> list[str]:
+    """Expose pip-installed CUDA libraries (requirements-gpu.txt) to ctranslate2 on Windows.
+
+    The nvidia-cublas-cu12 / nvidia-cudnn-cu12 wheels put their DLLs in site-packages/nvidia/*/bin,
+    which is not on the Windows DLL search path; without this ctranslate2 fails with
+    "cublas64_12.dll not found" and the server drops to the slow cpu/int8 path.
+    Must run before ctranslate2 / faster_whisper is imported. No-op when the dirs are absent.
+    """
+    if os.name != "nt":
+        return []
+    found: list[str] = []
+    for base in dict.fromkeys(p for p in sys.path if p):
+        root = Path(base) / "nvidia"
+        try:
+            if not root.is_dir():
+                continue
+            bins = sorted(b for b in root.glob("*/bin") if any(b.glob("*.dll")))
+        except OSError:
+            continue
+        for bin_dir in bins:
+            path = str(bin_dir.resolve())
+            if path not in found:
+                found.append(path)
+    for path in found:
+        try:
+            _dll_handles.append(os.add_dll_directory(path))
+        except (OSError, AttributeError):
+            pass
+    if found:
+        os.environ["PATH"] = os.pathsep.join(found + [os.environ.get("PATH", "")])
+    return found
+
+
+_nvidia_dll_dirs = register_nvidia_dlls()
 
 
 def detect_device() -> tuple[str, str]:
@@ -65,7 +102,13 @@ def detect_device() -> tuple[str, str]:
         import ctranslate2
 
         if ctranslate2.get_cuda_device_count() > 0:
-            return "cuda", "float16"
+            # int8_float16: ~4x faster than float16 on cards without fp16 tensor cores (GTX 16xx,
+            # measured 1.7s vs 6.5s for a 20s clip) and half the VRAM; PROMPTFLOW_COMPUTE overrides.
+            compute = os.environ.get("PROMPTFLOW_COMPUTE", "int8_float16")
+            supported = ctranslate2.get_supported_compute_types("cuda")
+            if compute not in supported:
+                compute = "float16" if "float16" in supported else "float32"
+            return "cuda", compute
     except Exception:
         pass
     return "cpu", "int8"
@@ -486,6 +529,7 @@ if __name__ == "__main__":
         except (AttributeError, ValueError):
             pass
     print(f"PromptFlow alignment server: http://{HOST}:{PORT} (model {MODEL_NAME}, {_device}/{_compute}, beam {BEAM_SIZE})", flush=True)
+    print(f"[cuda] nvidia DLL dirs: {', '.join(_nvidia_dll_dirs) or 'none (requirements-gpu.txt not installed)'}", flush=True)
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     threading.Thread(target=warm_model, name="whisper-warmup", daemon=True).start()
     server.serve_forever()
