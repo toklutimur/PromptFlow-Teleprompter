@@ -1,0 +1,6 @@
+# NVIDIA GPU (CUDA 12) runtime for faster-whisper / ctranslate2 4.x on Windows.
+# ctranslate2 4.8.3 ships cudnn64_9.dll 9.10.2.21; the cuDNN wheel must match that version.
+# align_server.py adds site-packages/nvidia/*/bin to the DLL search path at startup.
+-r requirements.txt
+nvidia-cublas-cu12==12.8.4.1
+nvidia-cudnn-cu12==9.10.2.21

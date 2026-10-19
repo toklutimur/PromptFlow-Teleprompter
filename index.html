@@ -67,13 +67,12 @@ body{overflow:hidden}
 <section class="teleprompter" id="stage">
   <div class="tele-head"><div class="scene"><span id="sceneLabel">Scene 01</span><b class="badge" id="currentMarker">READY</b></div><div class="timer" id="timer">00:00</div></div>
   <div class="reading"><div class="focus-line"></div><div class="script" id="script"></div></div>
-  <div class="controls"><button class="round" id="back" title="Başa dön">↺</button><button class="round" id="slower" title="Yavaşlat">−</button><button class="round mainplay" id="play" title="Başlat / duraklat">▶</button><button class="round" id="faster" title="Hızlandır">+</button><button class="round" id="reset" title="Sıfırla">⟲</button></div>
+  <div class="controls"><button class="round" id="back" title="Başa dön">↺</button><button class="round mainplay" id="play" title="Başlat / duraklat">▶</button><button class="round" id="reset" title="Sıfırla">⟲</button></div>
 </section>
 <aside class="side-panel">
   <div class="brand"><div class="brand-mark">P</div><div><b>PromptFlow</b><small>Studio / local teleprompter</small></div></div>
   <div class="topbar"><div><div class="eyebrow">Recording cockpit</div><h1 id="heading">Linux'u keşfederken</h1></div><div class="status"><span class="dot"></span><span id="serverStatus">Sunucu kontrol ediliyor…</span></div></div>
   <div class="toolbar">
-    <label>Hız <input id="speed" type="range" min="1" max="8" step="1" value="3"><strong id="speedValue">118</strong> wpm</label>
     <label>Yazı <input id="fontSize" type="range" min="22" max="86" step="1" value="34"><strong id="fontValue">34</strong>px</label>
     <label>Görünüm <select id="theme"><option value="dark">Dark focus</option><option value="warm">Warm studio</option></select></label>
     <audio id="referenceAudio" controls preload="auto" title="Ses dosyası"></audio>
@@ -114,6 +113,7 @@ const editor=$('#editor'),script=$('#script'),title=$('#title'),heading=$('#head
 const sceneLabel=$('#sceneLabel'),serverStatus=$('#serverStatus'),sceneList=$('#sceneList'),libraryList=$('#libraryList'),queueInfo=$('#queueInfo'),pipBtn=$('#pip'),saveAllBtn=$('#saveAll');
 // Same origin as the page (the server only accepts its own origin); file:// falls back to the default address.
 const API=location.protocol.startsWith('http')?location.origin:'http://127.0.0.1:8765';
+// Fixed reading pace for text without audio; audio-synced scenes follow the recording instead.
 const calibratedWpm=118;
 let running=false,audioClock=false,activeIndex=0,wordIndex=0,last=0,elapsed=0,raf=0,mirrored=false,unitDurations=[],unitStarts=[],wordTimings=[];
 let scenes=[],activeScene=0,queueBusy=false,pipWin=null,pipWordIndex=-1;
@@ -137,7 +137,7 @@ function render(){
   wordTimings=[];activeIndex=0;wordIndex=0;buildTiming();setActive(0);
 }
 function recenter(){const unit=script.querySelector('.unit.active');if(!unit)return;script.style.transform=`translateY(-${unit.offsetTop+unit.offsetHeight/2}px)${mirrored?' scaleX(-1)':''}`;}
-function buildTiming(){const units=[...script.querySelectorAll('.unit')];const wpm=calibratedWpm*(Number($('#speed').value)/3);unitDurations=units.map(u=>Math.max(700,u.querySelectorAll('.word').length/wpm*60000));unitStarts=[];let start=0;unitDurations.forEach(d=>{unitStarts.push(start);start+=d})}
+function buildTiming(){const units=[...script.querySelectorAll('.unit')];const wpm=calibratedWpm;unitDurations=units.map(u=>Math.max(700,u.querySelectorAll('.word').length/wpm*60000));unitStarts=[];let start=0;unitDurations.forEach(d=>{unitStarts.push(start);start+=d})}
 function applyWordTimings(timings){wordTimings=timings;const units=[...script.querySelectorAll('.unit')];unitStarts=[];unitDurations=[];let offset=0;units.forEach((unit,i)=>{const count=unit.querySelectorAll('.word').length;const first=wordTimings[offset]?.start??0;const last=wordTimings[offset+count-1]?.end??first+700;const next=wordTimings[offset+count]?.start;unitStarts.push(first*1000);unitDurations.push(Math.max(700,((next??last)-first)*1000));offset+=count});alignStatus.textContent='Senkron hazır ✓';}
 async function alignAudio(file,text){
   const form=new FormData();
@@ -153,7 +153,6 @@ function updateWord(){const unit=script.querySelector('.unit.active');if(!unit)r
 function tick(t){if(!running)return;const dt=Math.min(80,t-last||16);last=t;elapsed=audioClock?audio.currentTime*1000:elapsed+dt;const units=script.querySelectorAll('.unit');while(activeIndex<units.length-1&&elapsed>=unitStarts[activeIndex+1])setActive(activeIndex+1);updateWord();const totalSeconds=Math.floor(elapsed/1000);$('#timer').textContent=String(Math.floor(totalSeconds/60)).padStart(2,'0')+':'+String(totalSeconds%60).padStart(2,'0');raf=requestAnimationFrame(tick)}
 function toggle(){if(running){running=false;audio.pause();$('#play').textContent='▶';cancelAnimationFrame(raf);return}running=true;$('#play').textContent='Ⅱ';audioClock=false;if(audio.readyState)audio.play().then(()=>audioClock=true).catch(()=>{});last=performance.now();raf=requestAnimationFrame(tick)}
 function reset(){running=false;cancelAnimationFrame(raf);audio.pause();audio.currentTime=0;audioClock=false;elapsed=0;$('#play').textContent='▶';$('#timer').textContent='00:00';setActive(0)}
-function setSpeed(v){$('#speed').value=Math.max(1,Math.min(8,v));$('#speedValue').textContent=Math.round(calibratedWpm*(Number($('#speed').value)/3));if(wordTimings.length){applyWordTimings(wordTimings);updateAlignStatus()}else buildTiming()}
 
 // ---- Scenes: one per audio file, processed by a sequential queue ----
 function makeScene(name,file,text){return{name,file,fileName:file?.name||'',objectURL:file?URL.createObjectURL(file):'',text,alignment:null,status:file?'queued':'idle',error:'',replaced:false,textChanged:false,fromLibrary:false,slug:'',saved:false}}
@@ -361,7 +360,6 @@ libraryList.onclick=async e=>{
 };
 $('#refreshLibrary').onclick=loadLibrary;
 $('#play').onclick=toggle;$('#reset').onclick=reset;$('#back').onclick=reset;
-$('#slower').onclick=()=>setSpeed(Number($('#speed').value)-1);$('#faster').onclick=()=>setSpeed(Number($('#speed').value)+1);$('#speed').oninput=e=>setSpeed(e.target.value);
 $('#fontSize').oninput=e=>{script.style.fontSize=e.target.value+'px';$('#fontValue').textContent=e.target.value;recenter()};
 $('#loadDemo').onclick=()=>{editor.value='[HOOK] Bu videoda kameraya bakarak daha rahat konuşmanızı sağlayacak üç küçük tekniği göstereceğim.\n\nBirinci teknik: cümleleri kısa tutun. Böylece hem siz hem de izleyen kişi fikri daha kolay takip eder.\n\n[PAUSE] Burada nefes al.\n\nİkinci teknik: metni kelime kelime okumak yerine, bir sonraki fikri takip edin.\n\n[CAMERA] Gülümse ve kameraya dön.\n\nŞimdi üçüncü tekniğe geçelim.';onEditorInput();reset()};
 $('#clearText').onclick=()=>{editor.value='';onEditorInput();reset()};
