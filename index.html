@@ -71,7 +71,7 @@ body{overflow:hidden}
 </section>
 <aside class="side-panel">
   <div class="brand"><div class="brand-mark">P</div><div><b>PromptFlow</b><small>Studio / local teleprompter</small></div></div>
-  <div class="topbar"><div><div class="eyebrow">Recording cockpit</div><h1 id="heading">Linux'u keşfederken</h1></div><div class="status"><span class="dot"></span><span id="serverStatus">Sunucu kontrol ediliyor…</span></div></div>
+  <div class="topbar"><div><div class="eyebrow">Recording cockpit</div><h1 id="heading"></h1></div><div class="status"><span class="dot"></span><span id="serverStatus">Sunucu kontrol ediliyor…</span></div></div>
   <div class="toolbar">
     <label>Yazı <input id="fontSize" type="range" min="22" max="86" step="1" value="34"><strong id="fontValue">34</strong>px</label>
     <label>Görünüm <select id="theme"><option value="dark">Dark focus</option><option value="warm">Warm studio</option></select></label>
@@ -89,18 +89,8 @@ body{overflow:hidden}
     <div class="panel-head"><div class="field-label">Kütüphane</div><span class="panel-meta notice" id="libraryNotice" role="status"></span><button class="del" id="refreshLibrary" title="Listeyi yenile" aria-label="Listeyi yenile">⟳</button></div>
     <ul class="list" id="libraryList"><li class="empty">Yükleniyor…</li></ul>
   </div>
-  <div><div class="field-label">Video adı</div><input id="title" class="title-input" value="Linux'u keşfederken" aria-label="Video adı"></div>
-  <div><div class="field-label">Konuşma metni</div><textarea id="editor" class="editor" spellcheck="false">[HOOK] Bugün Linux'u ilk kez kurcalayan biri olarak, size en çok şaşırdığım üç şeyi anlatacağım.
-
-İlk olarak, sistemin ne kadar sessiz çalıştığına şaşırdım. Arka planda neler olduğunu görüyorsunuz ama bilgisayar size sürekli bildirim göndermiyor.
-
-[PAUSE] Burada kısa bir nefes al.
-
-İkinci nokta şu: Terminal sandığınız kadar korkutucu değil. Birkaç temel komutla dosyalarınızı, uygulamalarınızı ve sisteminizi yönetmeye başlayabiliyorsunuz.
-
-[CAMERA] Kameraya biraz daha yaklaş.
-
-Videonun sonunda, yeni başlayanlar için gerçekten işe yarayan kurulum adımlarını da paylaşacağım. Hazırsanız başlayalım.</textarea></div>
+  <div><div class="field-label">Video adı</div><input id="title" class="title-input" value="" aria-label="Video adı"></div>
+  <div><div class="field-label">Konuşma metni</div><textarea id="editor" class="editor" spellcheck="false"></textarea></div>
   <div class="help">İşaretçiler: <b>[HOOK]</b> vurgu · <b>[PAUSE]</b> nefes · <b>[CAMERA]</b> kameraya bak · <b>[ASIDE]</b> yan not</div>
   <div class="side-actions"><button class="btn" id="loadDemo">Örnek metin</button><button class="btn" id="clearText">Temizle</button><button class="btn primary" id="saveScript">Yerel kaydet</button></div>
   <div class="hintbar"><span>Metni düzenle, sonra <span class="key">Space</span> ile başlat / duraklat</span><span><span class="key">F</span> tam ekran · <span class="key">R</span> aynala</span></div>
