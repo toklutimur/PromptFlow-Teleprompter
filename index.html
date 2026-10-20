@@ -56,6 +56,7 @@ body{overflow:hidden}
 .chip.processing{background:#1d2840;color:var(--accent2)}
 .chip.ready{background:#26321e;color:var(--accent)}
 .chip.error{background:#3a1f22;color:var(--danger)}
+.chip.lang{background:transparent;border:1px solid var(--line);color:#b7c3ce}
 .del{background:transparent;color:var(--muted);font-size:16px;line-height:1;padding:0 4px;border-radius:6px}
 .del:hover{color:var(--danger)}
 .hintbar{flex-wrap:wrap;gap:6px}
@@ -74,6 +75,7 @@ body{overflow:hidden}
   <div class="topbar"><div><div class="eyebrow">Recording cockpit</div><h1 id="heading"></h1></div><div class="status"><span class="dot"></span><span id="serverStatus">Sunucu kontrol ediliyor…</span></div></div>
   <div class="toolbar">
     <label>Yazı <input id="fontSize" type="range" min="22" max="86" step="1" value="34"><strong id="fontValue">34</strong>px</label>
+    <label title="Whisper'a dil ipucu verir; otomatik algılamadaki ikinci kodlayıcı geçişini atlar">Dil <select id="language"><option value="auto">Otomatik (metinden)</option><option value="tr">Türkçe</option><option value="en">English</option><option value="de">Deutsch</option></select></label>
     <label>Görünüm <select id="theme"><option value="dark">Dark focus</option><option value="warm">Warm studio</option></select></label>
     <audio id="referenceAudio" controls preload="auto" title="Ses dosyası"></audio>
     <label id="audioDrop" class="audio-picker">MP3 bırak / seç (birden fazla olabilir) <input id="audioFile" type="file" multiple accept="audio/mpeg,audio/mp3,audio/*"></label>
@@ -129,10 +131,31 @@ function render(){
 function recenter(){const unit=script.querySelector('.unit.active');if(!unit)return;script.style.transform=`translateY(-${unit.offsetTop+unit.offsetHeight/2}px)${mirrored?' scaleX(-1)':''}`;}
 function buildTiming(){const units=[...script.querySelectorAll('.unit')];const wpm=calibratedWpm;unitDurations=units.map(u=>Math.max(700,u.querySelectorAll('.word').length/wpm*60000));unitStarts=[];let start=0;unitDurations.forEach(d=>{unitStarts.push(start);start+=d})}
 function applyWordTimings(timings){wordTimings=timings;const units=[...script.querySelectorAll('.unit')];unitStarts=[];unitDurations=[];let offset=0;units.forEach((unit,i)=>{const count=unit.querySelectorAll('.word').length;const first=wordTimings[offset]?.start??0;const last=wordTimings[offset+count-1]?.end??first+700;const next=wordTimings[offset+count]?.start;unitStarts.push(first*1000);unitDurations.push(Math.max(700,((next??last)-first)*1000));offset+=count});alignStatus.textContent='Senkron hazır ✓';}
-async function alignAudio(file,text){
+// ---- Language hint: skips Whisper's own detection (a second encoder pass) ----
+// LANG-DETECT-BEGIN (extracted verbatim by the node unit check; keep self-contained)
+const LANG_STOPWORDS={
+  tr:new Set('ve bir bu için ile çok ama ne mi mı mu mü daha gibi olarak sonra şimdi var yok değil kadar ben sen biz siz onlar nasıl neden şey veya ya de ki en hem bunu şu'.split(' ')),
+  en:new Set('the and is are to of that it you this for with be have not but what we they can do your from at or how about there just like my our if'.split(' ')),
+  de:new Set('der die das und ist nicht ich sie es ein eine zu mit auf für den dem des sich auch von wir ihr aber wie oder noch nur dass wenn bei sind wird werden kann heute'.split(' '))
+};
+// Returns 'tr' | 'en' | 'de', or '' when the text is empty or the signals are too close to call.
+// ö/ü occur in both Turkish and German, so they score nothing; ğ ş ı İ ç (TR) and ä ß (DE) plus stopwords decide.
+function detectLanguage(text){
+  const raw=String(text||'').replace(/\[(?:HOOK|PAUSE|CAMERA|ASIDE)\]/g,' ');
+  const score={tr:2*(raw.match(/[ğĞşŞıİçÇ]/g)||[]).length,en:0,de:2*(raw.match(/[äÄß]/g)||[]).length};
+  for(const word of raw.toLowerCase().match(/\p{L}+/gu)||[])for(const lang in LANG_STOPWORDS)if(LANG_STOPWORDS[lang].has(word))score[lang]++;
+  const ranked=Object.entries(score).sort((a,b)=>b[1]-a[1]);
+  const [best,second]=ranked;
+  return best[1]>=2&&best[1]>=second[1]*1.5?best[0]:'';
+}
+// LANG-DETECT-END
+const languageSelect=$('#language');
+function languageHint(text){const v=languageSelect.value;return v==='auto'?detectLanguage(text):v}
+async function alignAudio(file,text,language){
   const form=new FormData();
   form.append('audio',file,file.name||'audio.mp3');
   form.append('script',text);
+  if(language)form.append('language',language);
   const response=await fetch(API+'/align',{method:'POST',body:form});
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(data.error||'Senkronizasyon başarısız');
@@ -145,7 +168,7 @@ function toggle(){if(running){running=false;audio.pause();$('#play').textContent
 function reset(){running=false;cancelAnimationFrame(raf);audio.pause();audio.currentTime=0;audioClock=false;elapsed=0;$('#play').textContent='▶';$('#timer').textContent='00:00';setActive(0)}
 
 // ---- Scenes: one per audio file, processed by a sequential queue ----
-function makeScene(name,file,text){return{name,file,fileName:file?.name||'',objectURL:file?URL.createObjectURL(file):'',text,alignment:null,status:file?'queued':'idle',error:'',replaced:false,textChanged:false,fromLibrary:false,slug:'',saved:false}}
+function makeScene(name,file,text){return{name,file,fileName:file?.name||'',objectURL:file?URL.createObjectURL(file):'',text,alignment:null,status:file?'queued':'idle',error:'',replaced:false,textChanged:false,fromLibrary:false,slug:'',saved:false,language:''}}
 function baseName(n){return n.replace(/\.[^.]+$/,'')||'Sahne'}
 function isAudio(f){return f.type.startsWith('audio/')||/\.(mp3|wav|m4a|ogg|oga|opus|flac|aac|webm)$/i.test(f.name)}
 function currentScene(){return scenes[activeScene]}
@@ -158,8 +181,9 @@ function updateAlignStatus(){
   else if(s.fromLibrary)alignStatus.textContent='Kütüphaneden yüklendi · senkron hazır ✓';
   else alignStatus.textContent=s.replaced?'Metin sesten oluşturuldu ✓':'Senkron hazır ✓';
 }
+function langChip(code){return code?`<span class="chip lang" title="Dil: ${escapeAttr(code)}">${escapeHtml(code.toUpperCase())}</span>`:''}
 function renderScenes(){
-  sceneList.innerHTML=scenes.map((s,i)=>`<li class="row${i===activeScene?' active':''}" data-i="${i}" title="${escapeAttr(s.fileName||s.name||'')}"><span class="num">${String(i+1).padStart(2,'0')}</span><span class="name">${escapeHtml(s.name||'Adsız')}</span>${s.saved?'<span class="saved">kayıtlı</span>':''}<span class="chip ${s.status}"${s.status==='error'?` title="${escapeAttr(s.error)}"`:''}>${statusLabels[s.status]}</span></li>`).join('');
+  sceneList.innerHTML=scenes.map((s,i)=>`<li class="row${i===activeScene?' active':''}" data-i="${i}" title="${escapeAttr(s.fileName||s.name||'')}"><span class="num">${String(i+1).padStart(2,'0')}</span><span class="name">${escapeHtml(s.name||'Adsız')}</span>${s.saved?'<span class="saved">kayıtlı</span>':''}${langChip(s.language)}<span class="chip ${s.status}"${s.status==='error'?` title="${escapeAttr(s.error)}"`:''}>${statusLabels[s.status]}</span></li>`).join('');
   const withAudio=scenes.filter(s=>s.file),ready=withAudio.filter(s=>s.status==='ready');
   queueInfo.textContent=withAudio.length?`${ready.length}/${withAudio.length} hazır`:'';
   saveAllBtn.hidden=withAudio.length<2;
@@ -187,7 +211,7 @@ function addFiles(list){
   // Same file dropped again on the active scene: re-sync it against the edited text.
   if(files.length===1&&cur?.fileName===files[0].name&&cur.status!=='queued'&&cur.status!=='processing'){
     URL.revokeObjectURL(cur.objectURL);
-    Object.assign(cur,{file:files[0],objectURL:URL.createObjectURL(files[0]),text:editor.value,alignment:null,status:'queued',error:'',textChanged:false,fromLibrary:false});
+    Object.assign(cur,{file:files[0],objectURL:URL.createObjectURL(files[0]),text:editor.value,alignment:null,status:'queued',error:'',textChanged:false,fromLibrary:false,language:''});
     loadScene(activeScene);runQueue();return;
   }
   let first=-1;
@@ -208,10 +232,10 @@ async function runQueue(){
       s.status='processing';renderScenes();if(s===currentScene())updateAlignStatus();
       const sent=s.text;
       try{
-        const data=await alignAudio(s.file,sent);
+        const data=await alignAudio(s.file,sent,languageHint(sent));
         // Text typed while this scene was processing wins over the snapshot/transcript; timings then no longer match it.
         const edited=s.text!==sent;
-        Object.assign(s,{text:edited?s.text:(data.replaced?data.transcript:sent),alignment:data.words,replaced:!!data.replaced,status:'ready',error:'',textChanged:edited});
+        Object.assign(s,{text:edited?s.text:(data.replaced?data.transcript:sent),alignment:data.words,replaced:!!data.replaced,status:'ready',error:'',textChanged:edited,language:data.language||''});
       }catch(error){s.status='error';s.error=error.message;console.error(error)}
       if(s===currentScene())loadScene(scenes.indexOf(s));else renderScenes();
       if(s.status==='ready')await saveScene(s).catch(error=>console.error('Otomatik kayıt başarısız',error));
@@ -231,6 +255,7 @@ async function saveScene(s){
   form.append('text',s.text);
   form.append('alignment',JSON.stringify(s.textChanged?[]:(s.alignment||[])));
   form.append('duration',String(sceneDuration(s)));
+  form.append('language',s.language||'');
   const response=await fetch(API+'/library',{method:'POST',body:form});
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw new Error(data.error||'Kaydedilemedi');
@@ -243,7 +268,7 @@ async function loadLibrary(){
     const response=await fetch(API+'/library');
     const items=await response.json();
     if(!response.ok)throw new Error(items.error||'Liste alınamadı');
-    libraryList.innerHTML=items.length?items.map(it=>`<li class="row" data-slug="${escapeAttr(it.slug)}" title="${escapeAttr(it.savedAt?new Date(it.savedAt).toLocaleString('tr-TR'):'')}"><span class="name">${escapeHtml(it.title||it.slug)}</span><span class="meta">${fmtTime(it.duration)}</span><button class="del" data-del="${escapeAttr(it.slug)}" title="Sil" aria-label="Sil">×</button></li>`).join(''):'<li class="empty">Henüz kayıt yok</li>';
+    libraryList.innerHTML=items.length?items.map(it=>`<li class="row" data-slug="${escapeAttr(it.slug)}" title="${escapeAttr(it.savedAt?new Date(it.savedAt).toLocaleString('tr-TR'):'')}"><span class="name">${escapeHtml(it.title||it.slug)}</span>${langChip(it.language)}<span class="meta">${fmtTime(it.duration)}</span><button class="del" data-del="${escapeAttr(it.slug)}" title="Sil" aria-label="Sil">×</button></li>`).join(''):'<li class="empty">Henüz kayıt yok</li>';
   }catch(error){libraryList.innerHTML='<li class="empty">Sunucuya ulaşılamadı</li>'}
 }
 async function openLibraryEntry(slug){
@@ -258,7 +283,7 @@ async function openLibraryEntry(slug){
     ]);
     const file=new File([blob],meta.audioName||('audio.'+(meta.audioExt||'mp3')),{type:blob.type||'audio/mpeg'});
     const s=makeScene(meta.title||slug,file,meta.text||'');
-    Object.assign(s,{alignment:Array.isArray(meta.alignment)?meta.alignment:[],status:'ready',slug,saved:true,fromLibrary:true});
+    Object.assign(s,{alignment:Array.isArray(meta.alignment)?meta.alignment:[],status:'ready',slug,saved:true,fromLibrary:true,language:typeof meta.language==='string'?meta.language:''});
     if(scenes.length===1&&!scenes[0].file){scenes[0]=s;loadScene(0)}
     else{scenes.push(s);loadScene(scenes.length-1)}
   }catch(error){alignStatus.textContent='Hata: '+error.message;console.error(error)}
@@ -370,12 +395,15 @@ saveAllBtn.onclick=async()=>{
 };
 $('#mirror').onclick=()=>{mirrored=!mirrored;recenter();syncPip(true);$('#mirror').textContent=mirrored?'↔ Aynalama açık':'↔ Aynala'};
 $('#fullscreen').onclick=()=>stage.requestFullscreen?.();
+languageSelect.onchange=()=>localStorage.setItem('promptflow-language',languageSelect.value);
 $('#theme').onchange=e=>{document.body.style.filter=e.target.value==='warm'?'sepia(.12) saturate(1.08)':'none';syncPip(true)};
 document.addEventListener('keydown',onKey);
 
 // ---- Boot ----
 const saved=localStorage.getItem('promptflow-text'),savedTitle=localStorage.getItem('promptflow-title');
 if(saved!==null)editor.value=saved;if(savedTitle)title.value=savedTitle;
+const savedLanguage=localStorage.getItem('promptflow-language');
+languageSelect.value=['auto','tr','en','de'].includes(savedLanguage)?savedLanguage:'auto';
 scenes=[makeScene(title.value,null,editor.value)];
 loadScene(0);loadLibrary();pollHealth();
 </script>
