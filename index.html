@@ -140,13 +140,16 @@ const LANG_STOPWORDS={
 };
 // Returns 'tr' | 'en' | 'de', or '' when the text is empty or the signals are too close to call.
 // ö/ü occur in both Turkish and German, so they score nothing; ğ ş ı İ ç (TR) and ä ß (DE) plus stopwords decide.
+// A wrong hint makes Whisper hallucinate, so doubt means '': each letter class adds 2 once (presence, not per
+// character), the winner needs at least one stopword hit, and must beat the runner-up by 1.5x.
 function detectLanguage(text){
   const raw=String(text||'').replace(/\[(?:HOOK|PAUSE|CAMERA|ASIDE)\]/g,' ');
-  const score={tr:2*(raw.match(/[ğĞşŞıİçÇ]/g)||[]).length,en:0,de:2*(raw.match(/[äÄß]/g)||[]).length};
-  for(const word of raw.toLowerCase().match(/\p{L}+/gu)||[])for(const lang in LANG_STOPWORDS)if(LANG_STOPWORDS[lang].has(word))score[lang]++;
-  const ranked=Object.entries(score).sort((a,b)=>b[1]-a[1]);
+  const letters={tr:/[ğĞşŞıİçÇ]/.test(raw)?2:0,en:0,de:/[äÄß]/.test(raw)?2:0};
+  const hits={tr:0,en:0,de:0};
+  for(const word of raw.toLowerCase().match(/\p{L}+/gu)||[])for(const lang in LANG_STOPWORDS)if(LANG_STOPWORDS[lang].has(word))hits[lang]++;
+  const ranked=Object.keys(hits).map(lang=>[lang,letters[lang]+hits[lang]]).sort((a,b)=>b[1]-a[1]);
   const [best,second]=ranked;
-  return best[1]>=2&&best[1]>=second[1]*1.5?best[0]:'';
+  return hits[best[0]]>=1&&best[1]>=2&&best[1]>=second[1]*1.5?best[0]:'';
 }
 // LANG-DETECT-END
 const languageSelect=$('#language');
