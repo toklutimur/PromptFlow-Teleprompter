@@ -17,7 +17,7 @@ Sabit WPM tabanlı teleprompterlar vurgu, kelime uzatma, nefes ve duraklamalarda
 ## Özellikler
 
 - MP3, WAV, M4A ve OGG sürükle-bırak desteği
-- Türkçe dahil otomatik dil algılama
+- Türkçe, İngilizce ve Almanca için hızlandıran dil ipucu; diğer dillerde otomatik dil algılama
 - Whisper `large-v3-turbo` ile kelime zamanlaması
 - Ses dosyasını prompter ile birlikte oynatma
 - Gerçek zamanlı kelime vurgusu
@@ -70,7 +70,7 @@ Birden fazla ses dosyası seçildiğinde her biri `Sahneler` listesine ayrı bir
 
 ## Yerel kütüphane
 
-- Her sahne analiz biter bitmez `library/<ad>/` klasörüne kaydedilir: orijinal ses dosyası (`audio.<uzantı>`) ve `scene.json` (başlık, metin, kelime zamanları, kayıt zamanı).
+- Her sahne analiz biter bitmez `library/<ad>/` klasörüne kaydedilir: orijinal ses dosyası (`audio.<uzantı>`) ve `scene.json` (başlık, metin, kelime zamanları, dil, kayıt zamanı).
 - `Yerel kaydet` etkin sahneyi, `Tümünü kaydet` hazır olan tüm sahneleri kaydeder. Aynı başlıkla kaydetmek eski kaydın üzerine yazar.
 - `Kütüphane` listesindeki bir kayda tıklamak sahneyi yeniden analiz etmeden, senkronize ve oynatılabilir olarak açar. `×` kaydı siler.
 - `library/` klasörü Git'e dahil edilmez.
@@ -78,6 +78,17 @@ Birden fazla ses dosyası seçildiğinde her biri `Sahneler` listesine ayrı bir
 ## Cümleyi ayır (her zaman üstte pencere)
 
 `Cümleyi ayır ⧉` düğmesi, o anda okunan cümleyi büyük puntoyla ve aktif kelime vurgulu olarak ayrı bir pencerede gösterir. Pencere diğer uygulamaların üstünde kalır, istenen monitöre sürüklenebilir; yazı boyutu pencere boyutuna göre ölçeklenir. Document Picture-in-Picture API'si gerektirir (Chrome/Edge); desteklemeyen tarayıcılarda düğme pasiftir.
+
+## Dil ipucu
+
+Araçlar bölümündeki `Dil` seçimi Whisper'a konuşmanın dilini önceden söyler; böylece Whisper kendi dil algılama geçişini atlar. Seçim tarayıcıda hatırlanır.
+
+- `Otomatik (metinden)` (varsayılan): dil, metin alanındaki yazıdan tarayıcıda tahmin edilir. Türkçe için ğ ş ı İ ç harfleri, Almanca için ä ß harfleri ve her dil için kısa bir sık kelime listesi kullanılır. ö/ü iki dilde de bulunduğu için tek başına karar vermez. Metin boşsa veya sonuç kararsızsa ipucu gönderilmez ve Whisper dili kendisi algılar. Toplu bırakılan ikinci ve sonraki sahnelerin metni boş olduğundan bu sahnelerde de ipucu gönderilmez; hepsi aynı dildeyse dili elle seçin.
+- `Türkçe`, `English`, `Deutsch`: bu dil her istekte gönderilir.
+- Sunucu yalnızca `tr`, `en`, `de` veya boş değeri kabul eder; başka bir değer `400` hatası döndürür.
+- Kullanılan dil her sahnenin satırında (`TR`, `EN`, `DE`) gösterilir ve `scene.json` dosyasına `language` olarak kaydedilir. Bu alan eklenmeden önce kaydedilen kayıtlar dil etiketi olmadan açılır.
+- Ölçüm (GTX 1650 Ti, sıcak model, ~20 sn TTS kaydı): ipucuyla yaklaşık 3,5 sn, ipucusuz yaklaşık 4,5 sn. CPU'da 29 sn yerine 23 sn.
+- Dili yanlış seçmek sonucu bozar. Whisper bu durumda konuşmayı seçilen dile çevirmeye veya uydurmaya çalışır ve işlem uzayabilir. Sonuç anlamsızsa dili düzeltip MP3'ü tekrar bırakın.
 
 ## Mevcut metinle çalışma
 

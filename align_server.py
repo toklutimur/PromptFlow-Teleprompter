@@ -45,6 +45,10 @@ WINDOWS_RESERVED = {"con", "prn", "aux", "nul", *(f"com{i}" for i in range(1, 10
 # Only the app's own address may talk to the server: blocks DNS rebinding (Host) and cross-site writes (Origin).
 ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 ALLOWED_ORIGINS = {f"http://{host}" for host in ALLOWED_HOSTS}
+# Whisper language hints the UI may send; a hint skips Whisper's own detection pass (a second encoder run).
+HINT_LANGUAGES = {"tr", "en", "de"}
+# Language codes stored per scene: a hint above or whatever Whisper detected (ISO 639-1, "haw", "yue", ...).
+LANG_CODE_RE = re.compile(r"[a-z]{2,3}")
 TR_MAP = str.maketrans({"ç": "c", "Ç": "c", "ğ": "g", "Ğ": "g", "ı": "i", "İ": "i", "ö": "o", "Ö": "o", "ş": "s", "Ş": "s", "ü": "u", "Ü": "u"})
 
 
@@ -181,16 +185,17 @@ def warm_model():
         print(f"[model] warm-up failed: {exc}", flush=True)
 
 
-def _run_whisper(model, samples) -> list[dict]:
-    segments, _ = model.transcribe(samples, language=None, word_timestamps=True, vad_filter=True, beam_size=BEAM_SIZE)
+def _run_whisper(model, samples, language: str | None) -> tuple[list[dict], str]:
+    segments, info = model.transcribe(samples, language=language, word_timestamps=True, vad_filter=True, beam_size=BEAM_SIZE)
     recognized = []
     for segment in segments:
         for word in segment.words or []:
             recognized.append({"word": word.word.strip(), "start": word.start, "end": word.end})
-    return recognized
+    return recognized, info.language
 
 
-def transcribe(audio_path: str) -> list[dict]:
+def transcribe(audio_path: str, language: str | None = None) -> tuple[list[dict], str]:
+    """Return (words, language). language=None lets Whisper detect it; a code skips detection."""
     global _ready
     import numpy as np
 
@@ -199,14 +204,14 @@ def transcribe(audio_path: str) -> list[dict]:
     with _transcribe_lock:
         model = get_model()
         try:
-            recognized = _run_whisper(model, samples)
+            result = _run_whisper(model, samples, language)
         except Exception as exc:
             if _device != "cuda":
                 raise
             _fall_back_to_cpu(exc)
-            recognized = _run_whisper(get_model(), samples)
+            result = _run_whisper(get_model(), samples, language)
         _ready = True
-        return recognized
+        return result
 
 
 # --- Script/transcript alignment ---
@@ -365,7 +370,7 @@ class Handler(BaseHTTPRequestHandler):
                     scene = json.loads(scene_file.read_text(encoding="utf-8"))
                 except (OSError, ValueError):
                     continue
-                items.append({"slug": folder.name, "title": scene.get("title", folder.name), "savedAt": scene.get("savedAt", ""), "duration": scene.get("duration", 0)})
+                items.append({"slug": folder.name, "title": scene.get("title", folder.name), "savedAt": scene.get("savedAt", ""), "duration": scene.get("duration", 0), "language": scene.get("language") or ""})
         items.sort(key=lambda item: item["savedAt"], reverse=True)
         self._json(200, items)
 
@@ -417,6 +422,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             form = self._form()
             script = form_text(form, "script")
+            # Missing/empty = let Whisper detect; anything outside HINT_LANGUAGES is rejected, not silently ignored.
+            hint = form_text(form, "language").strip().lower() or None
+            if hint is not None and hint not in HINT_LANGUAGES:
+                print(f"[align] rejected language hint {hint[:16]!r}", flush=True)
+                self._json(400, {"error": f"Geçersiz dil: {hint[:16]} (tr, en, de veya boş)"})
+                return
             audio = form["audio"] if "audio" in form else None
             if audio is None or not getattr(audio, "file", None):
                 raise ValueError("Ses dosyası eksik")
@@ -428,7 +439,7 @@ class Handler(BaseHTTPRequestHandler):
                 audio_path = tmp.name
             try:
                 started = time.perf_counter()
-                recognized = transcribe(audio_path)
+                recognized, language = transcribe(audio_path, hint)
                 transcript = " ".join(item["word"] for item in recognized)
                 replaced = False
                 try:
@@ -437,8 +448,9 @@ class Handler(BaseHTTPRequestHandler):
                     script = transcript
                     timings = align(script, recognized)
                     replaced = True
-                print(f"[align] {name}: {time.perf_counter() - started:.1f}s, {len(recognized)} words", flush=True)
-                self._json(200, {"words": timings, "transcript": script, "replaced": replaced, "recognized": len(recognized)})
+                source = "hint" if hint else "whisper"
+                print(f"[align] {name}: {time.perf_counter() - started:.1f}s, {len(recognized)} words, language={language} ({source})", flush=True)
+                self._json(200, {"words": timings, "transcript": script, "replaced": replaced, "recognized": len(recognized), "language": language, "languageSource": source})
             finally:
                 os.unlink(audio_path)
         except Exception as exc:
@@ -454,6 +466,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             title = form_text(form, "title").strip() or "Sahne"
             text = form_text(form, "text")
+            language = form_text(form, "language").strip().lower()
+            if not LANG_CODE_RE.fullmatch(language):
+                language = ""
             try:
                 alignment = json.loads(form_text(form, "alignment", "[]") or "[]")
             except ValueError:
@@ -489,6 +504,7 @@ class Handler(BaseHTTPRequestHandler):
                 "duration": round(duration, 3),
                 "audioName": Path(audio.filename or f"audio.{ext}").name,
                 "audioExt": ext,
+                "language": language,  # "" = unknown; entries saved before this field have no key at all
                 "savedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             }
             tmp = path / "scene.json.tmp"
